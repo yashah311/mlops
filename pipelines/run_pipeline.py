@@ -2,6 +2,7 @@ import os
 import yaml
 import datetime
 import sagemaker
+from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
@@ -29,9 +30,6 @@ def create_and_run_pipeline():
         name="TrainingInstanceType",
         default_value=config["infrastructure"]["training_instance"]
     )
-    
-    # 🎯 FIX: Explicitly lazy-load the estimator from the base package submodule 
-    from sagemaker.sklearn.estimator import SKLearn
     
     estimator = SKLearn(
         entry_point="train.py",
