@@ -2,7 +2,7 @@ import os
 import yaml
 import datetime
 import sagemaker
-from sagemaker.sklearn.estimator import SKLearn
+from sagemaker_scikit_learn.estimator import SKLearn 
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
