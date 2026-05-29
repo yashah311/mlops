@@ -1,0 +1,16 @@
+# Python bytecode environment configurations
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+
+# Local model artifact caches
+*.joblib
+*.pkl
+*.tar.gz
+
+# IDE settings and system configuration layers
+.ipynb_checkpoints/
+.vscode/
+.idea/
+.DS_Store

@@ -1,0 +1,13 @@
+aws:
+  region: "ap-south-1"
+  model_package_group_name: "mlops-model-group"
+  pipeline_name: "MLOpsPipelineVersioned"
+
+infrastructure:
+  training_instance: "ml.m5.large"
+  inference_instance: "ml.m5.large"
+  framework_version: "1.0-1"
+
+metadata:
+  project: "mlops"
+  env: "dev"
