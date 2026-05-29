@@ -2,7 +2,6 @@ import os
 import yaml
 import datetime
 import sagemaker
-from sagemaker_scikit_learn.estimator import SKLearn 
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
@@ -17,11 +16,9 @@ def create_and_run_pipeline():
         
     session = sagemaker.Session()
     
-    # 🎯 SECURE WORKSPACE DECOUPLING: Pull directly from yaml to satisfy the GitHub pipeline wrapper
+    # Resolve the security context dynamically for target execution runners
     role = config["aws"].get("sagemaker_role_arn")
-    
     if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
-        # Fallback to local evaluation only if running inside an active AWS Studio notebook domain
         from sagemaker import get_execution_role
         role = get_execution_role()
         
@@ -32,6 +29,9 @@ def create_and_run_pipeline():
         name="TrainingInstanceType",
         default_value=config["infrastructure"]["training_instance"]
     )
+    
+    # 🎯 FIX: Explicitly lazy-load the estimator from the base package submodule 
+    from sagemaker.sklearn.estimator import SKLearn
     
     estimator = SKLearn(
         entry_point="train.py",
