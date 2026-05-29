@@ -18,7 +18,6 @@ def input_fn(request_body, request_content_type):
     print(f"Received request payload content type: {request_content_type}")
     if request_content_type == "application/json":
         data = json.loads(request_body)
-        # Handle naked vectors or complex multi-tier prediction matrices
         return np.array(data)
     else:
         raise ValueError(f"Unsupported input content formatting protocol: {request_content_type}")
@@ -30,9 +29,16 @@ def predict_fn(input_data, model):
     return prediction
 
 def output_fn(prediction, response_content_type):
-    """Formats inference calculations into valid response text streams."""
+    """Formats inference calculations into valid response text streams.
+    
+    CRITICAL FIX: Prevents the container from crashing with a 500 /ping error.
+    """
     print(f"Formatting outbound response content protocol: {response_content_type}")
-    if response_content_type == "application/json":
-        return json.dumps(prediction.tolist()), response_content_type
+    
+    # Convert numpy array to standard Python list for JSON serialization
+    if isinstance(prediction, np.ndarray):
+        response_body = json.dumps(prediction.tolist())
     else:
-        return json.dumps(prediction.tolist()), "application/json"
+        response_body = json.dumps(prediction)
+        
+    return response_body, "application/json"
