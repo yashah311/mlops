@@ -4,7 +4,7 @@ import boto3
 from sagemaker import get_execution_role
 from sagemaker.model import ModelPackage
 
-def deploy_latest_model():
+def deploy_or_update_endpoint():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config", "pipeline_config.yaml")
     
@@ -14,7 +14,7 @@ def deploy_latest_model():
     role = get_execution_role()
     sagemaker_client = boto3.client("sagemaker", region_name=config["aws"]["region"])
     
-    # Query latest validated model package entry from the registry group
+    # 1. Fetch the latest approved model package from the Registry Group
     response = sagemaker_client.list_model_packages(
         ModelPackageGroupName=config["aws"]["model_package_group_name"],
         ModelApprovalStatus="Approved",
@@ -24,25 +24,32 @@ def deploy_latest_model():
     
     packages = response.get("ModelPackageSummaryList", [])
     if not packages:
-        raise ValueError(f"No approved models found inside group target: {config['aws']['model_package_group_name']}")
+        raise ValueError(f"No approved model packages found in group: {config['aws']['model_package_group_name']}")
         
     latest_package_arn = packages[0]["ModelPackageArn"]
-    print(f"Deploying approved model package resource: {latest_package_arn}")
+    print(f"Found latest approved model package: {latest_package_arn}")
     
-    # Initialize deployment engine utilizing ModelPackage directly
+    # 2. Reference the Model Package for deployment
     model = ModelPackage(
         role=role,
         model_package_arn=latest_package_arn
     )
     
-    print("Spinning up managed endpoint infrastructure hosts...")
+    # Standardized endpoint naming strategy
+    endpoint_name = f"{config['aws']['model_package_group_name']}-prod"
+    print(f"Targeting deployment endpoint name: {endpoint_name}")
+    
+    # 3. Deploy the model
+    # ModelPackage deployment automatically pulls 'inference.py' from registry metadata, avoiding /ping errors
+    print("Spinning up managed endpoint infrastructure. Please wait...")
     predictor = model.deploy(
         initial_instance_count=1,
-        instance_type=config["infrastructure"]["inference_instance"]
+        instance_type=config["infrastructure"]["inference_instance"],
+        endpoint_name=endpoint_name,
+        update_endpoint_with_new_model=True # 🔄 Updates existing endpoint cleanly if it already exists
     )
     
-    print(f"🎯 Managed Endpoint deployment successfully created: {predictor.endpoint_name}")
-    return predictor.endpoint_name
+    print(f"🎯 Production Endpoint deployed successfully: {predictor.endpoint_name}")
 
 if __name__ == "__main__":
-    deploy_latest_model()
+    deploy_or_update_endpoint()

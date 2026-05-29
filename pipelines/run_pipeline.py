@@ -4,12 +4,13 @@ import datetime
 import sagemaker
 from sagemaker import get_execution_role
 from sagemaker.sklearn.estimator import SKLearn
+from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.step_collections import RegisterModel
 
 def create_and_run_pipeline():
-    # Read modular environment runtime configuration parameters
+    # Resolve file paths accurately
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config", "pipeline_config.yaml")
     
@@ -18,15 +19,20 @@ def create_and_run_pipeline():
         
     session = sagemaker.Session()
     role = get_execution_role()
-    
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
-    # Construct base estimator framework tracking definition
+    # 🎯 PIPELINE PARAMETERIZATION: Avoids hardcoding instance variables
+    instance_type_param = ParameterString(
+        name="TrainingInstanceType",
+        default_value=config["infrastructure"]["training_instance"]
+    )
+    
+    # Core Estimator pointing to the 'src' directory bundle
     estimator = SKLearn(
         entry_point="train.py",
-        source_dir=os.path.join(base_dir, "src"), # Packages everything in src/ automatically
+        source_dir=os.path.join(base_dir, "src"),
         role=role,
-        instance_type=config["infrastructure"]["training_instance"],
+        instance_type=instance_type_param,
         framework_version=config["infrastructure"]["framework_version"],
         sagemaker_session=session
     )
@@ -36,7 +42,7 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
-    # Create workflow registration configurations matching manifest hooks
+    # Register model while keeping environment metadata attached to the registry entries
     register_step = RegisterModel(
         name="RegisterModel",
         estimator=estimator,
@@ -47,7 +53,6 @@ def create_and_run_pipeline():
         transform_instances=[config["infrastructure"]["inference_instance"]],
         model_package_group_name=config["aws"]["model_package_group_name"],
         approval_status="Approved",
-        # Keep environment configuration keys attached to registry entries
         env={
             "SAGEMAKER_PROGRAM": "inference.py",
             "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
@@ -61,17 +66,19 @@ def create_and_run_pipeline():
     
     pipeline = Pipeline(
         name=config["aws"]["pipeline_name"],
+        parameters=[instance_type_param],
         steps=[training_step, register_step],
         sagemaker_session=session
     )
     
+    print("Uploading and synchronizing pipeline schema with AWS...")
     pipeline.upsert(role_arn=role)
     execution = pipeline.start()
     
-    print(f"🚀 SageMaker Pipeline compilation successfully synchronized.")
-    print(f"Execution ARN identifier: {execution.arn}")
-    print(f"Version payload marker: {model_version}")
-    return execution
+    print(f"🚀 Pipeline execution started! ARN: {execution.arn}")
+    print("Waiting for training and model registration to complete...")
+    execution.wait()
+    print("✅ Pipeline executed successfully. Model package is registered.")
 
 if __name__ == "__main__":
     create_and_run_pipeline()
