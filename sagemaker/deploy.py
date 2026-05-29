@@ -6,7 +6,7 @@ session = sagemaker.Session()
 role = sagemaker.get_execution_role()
 
 # Model location (after training job completes)
-model_data = "s3://amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9/shared/sagemaker-scikit-learn-2026-05-29-09-22-54-482/output/model.tar.gz"
+model_data = "arn:aws:s3:::amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9/shared/sagemaker-scikit-learn-2026-05-29-10-04-10-343/output/model.tar.gz"
 
 model = SKLearnModel(
     model_data=model_data,
