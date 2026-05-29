@@ -2,6 +2,7 @@ import os
 import yaml
 import boto3
 from sagemaker import get_execution_role
+from sagemaker.session import get_execution_role
 from sagemaker.model import ModelPackage
 
 def deploy_or_update_endpoint():

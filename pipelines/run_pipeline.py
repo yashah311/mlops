@@ -3,6 +3,7 @@ import yaml
 import datetime
 import sagemaker
 from sagemaker import get_execution_role
+from sagemaker.session import get_execution_role
 from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
