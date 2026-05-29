@@ -85,7 +85,7 @@ def create_and_run_pipeline():
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
         steps=[training_step, register_step],
-        sagemaker_session=session  # Passes the fixed session
+        sagemaker_session=session  # 🎯 Ensures the pipeline uses your session tracking definitions
     )
     
     print("Uploading and synchronizing pipeline schema with AWS...")
