@@ -2,6 +2,7 @@ import os
 import yaml
 import boto3
 import datetime
+import time
 
 def deploy_or_update_endpoint():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,7 +29,7 @@ def deploy_or_update_endpoint():
     latest_package_arn = packages[0]["ModelPackageArn"]
     print(f"Found latest approved model package: {latest_package_arn}")
     
-    # 2. Dynamic Naming Definitions
+    # 2. Naming Layout Definitions
     endpoint_name = f"{config['aws']['model_package_group_name']}-prod"
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     endpoint_config_name = f"{endpoint_name}-config-{timestamp}"
@@ -38,7 +39,7 @@ def deploy_or_update_endpoint():
     print(f"Creating Unique Config: {endpoint_config_name}")
     print(f"Targeting Endpoint: {endpoint_name}")
     
-    # 3. Create SageMaker Model Entity from the Model Package
+    # 3. Create SageMaker Model Entity
     sagemaker_client.create_model(
         ModelName=model_name,
         ExecutionRoleArn=role,
@@ -47,7 +48,7 @@ def deploy_or_update_endpoint():
         }
     )
     
-    # 4. Create an Immutable, Timestamped Endpoint Configuration 🚀
+    # 4. Create Endpoint Configuration
     sagemaker_client.create_endpoint_config(
         EndpointConfigName=endpoint_config_name,
         ProductionVariants=[
@@ -65,27 +66,53 @@ def deploy_or_update_endpoint():
         ]
     )
     
-    # 5. Check if Endpoint Already Exists to Determine Routing Strategy
+    # 5. Smart Health Check Logic 🎯
+    endpoint_exists = False
+    should_delete_failed = False
+    
     try:
-        sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
-        print(f"Active endpoint detected! Performing zero-downtime rolling update...")
+        desc_response = sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
+        endpoint_exists = True
+        status = desc_response["EndpointStatus"]
+        print(f"Current Endpoint Status located: {status}")
         
-        # Safely switch traffic to our unique timestamp configuration
+        if status == "Failed":
+            print("⚠️ Endpoint is in a failed state. Flagging for removal...")
+            should_delete_failed = True
+            
+    except sagemaker_client.exceptions.ClientError:
+        print("Endpoint does not exist yet. Preparing first-time build sequence...")
+        
+    # 6. Execution Branching Handling
+    if should_delete_failed:
+        print(f"Deleting failed endpoint '{endpoint_name}' to clear workspace...")
+        sagemaker_client.delete_endpoint(EndpointName=endpoint_name)
+        
+        # Wait until the deletion is fully completed on AWS
+        print("Waiting for deletion confirmation status...")
+        while True:
+            try:
+                sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
+                time.sleep(10)
+            except sagemaker_client.exceptions.ClientError:
+                print("✅ Failed endpoint completely purged.")
+                break
+        endpoint_exists = False # Reset flag to force a fresh creation run
+        
+    if endpoint_exists:
+        print("Performing seamless rolling update on active endpoint tracking layer...")
         sagemaker_client.update_endpoint(
             EndpointName=endpoint_name,
             EndpointConfigName=endpoint_config_name
         )
-        print("Update command sent to AWS successfully.")
-        
-    except sagemaker_client.exceptions.ClientError:
-        print(f"Endpoint not found. Initializing a fresh deployment...")
+    else:
+        print("Initializing clean first-time endpoint generation run...")
         sagemaker_client.create_endpoint(
             EndpointName=endpoint_name,
             EndpointConfigName=endpoint_config_name
         )
-        print("Fresh creation command sent to AWS successfully.")
         
-    print(f"🎯 Production Endpoint deployment tracking active: {endpoint_name}")
+    print(f"🚀 MLOps Endpoint orchestrator finished monitoring initialization for: {endpoint_name}")
 
 if __name__ == "__main__":
     deploy_or_update_endpoint()
