@@ -19,13 +19,12 @@ def create_and_run_pipeline():
     target_region = config["aws"]["region"]
     print(f"Initializing SageMaker Session explicitly targeting region: {target_region}")
     
-    # 🎯 FIX: Instantiate clients with explicit region bindings to satisfy the v2 SDK plane
+    # Instantiate clients with explicit region bindings to satisfy the SDK layer
     boto_session = boto3.Session(region_name=target_region)
     sagemaker_client = boto_session.client("sagemaker", region_name=target_region)
     
     custom_bucket = config["aws"].get("default_bucket")
     
-    # Force Session variables to inherit explicit regional endpoints 🚀
     if custom_bucket and "YOUR_EXISTING_S3_BUCKET" not in custom_bucket:
         session = sagemaker.Session(
             boto_session=boto_session,
@@ -87,7 +86,7 @@ def create_and_run_pipeline():
         ]
     )
     
-    # 🎯 FIX: Force the Pipeline DAG wrapper layer to consume the regional session object
+    # Explicitly force the Pipeline definition to consume the regional session object
     pipeline = Pipeline(
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
