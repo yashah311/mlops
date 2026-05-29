@@ -2,7 +2,6 @@ import os
 import yaml
 import datetime
 import sagemaker
-from sagemaker.session import get_execution_role
 from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
@@ -10,7 +9,6 @@ from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.workflow.step_collections import RegisterModel
 
 def create_and_run_pipeline():
-    # Resolve file paths accurately
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config", "pipeline_config.yaml")
     
@@ -19,30 +17,26 @@ def create_and_run_pipeline():
         
     session = sagemaker.Session()
     
-    # 🎯 FIX: Safely resolve the role ARN depending on environment (GitHub vs. SageMaker Studio)
-    try:
-        role = config["aws"]["sagemaker_role_arn"]
-        if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
-            raise ValueError("Config role ARN placeholder not updated.")
-        print(f"Using SageMaker Execution Role ARN from config: {role}")
-    except (KeyError, ValueError):
-        print("Config role not found or not configured. Attempting native AWS fallback...")
+    # 🎯 SECURE WORKSPACE DECOUPLING: Pull directly from yaml to satisfy the GitHub pipeline wrapper
+    role = config["aws"].get("sagemaker_role_arn")
+    
+    if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
+        # Fallback to local evaluation only if running inside an active AWS Studio notebook domain
+        from sagemaker import get_execution_role
         role = get_execution_role()
-        print(f"Using native workspace resolved role: {role}")
-
+        
+    print(f"Executing workflow utilizing IAM Target Role: {role}")
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
-    # 🎯 PIPELINE PARAMETERIZATION: Avoids hardcoding instance variables
     instance_type_param = ParameterString(
         name="TrainingInstanceType",
         default_value=config["infrastructure"]["training_instance"]
     )
     
-    # Core Estimator pointing to the 'src' directory bundle
     estimator = SKLearn(
         entry_point="train.py",
         source_dir=os.path.join(base_dir, "src"),
-        role=role, # 👈 Uses the securely resolved role
+        role=role,
         instance_type=instance_type_param,
         framework_version=config["infrastructure"]["framework_version"],
         sagemaker_session=session
@@ -53,7 +47,6 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
-    # Register model while keeping environment metadata attached to the registry entries
     register_step = RegisterModel(
         name="RegisterModel",
         estimator=estimator,
