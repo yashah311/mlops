@@ -2,7 +2,7 @@ aws:
   region: "ap-south-1"
   model_package_group_name: "mlops-model-group"
   pipeline_name: "MLOpsPipelineVersioned"
-  sagemaker_role_arn: "arn:aws:iam::194169602214:role/service-role/AmazonSageMakerAdminIAMExecutionRole"
+  sagemaker_role_arn: "arn:aws:iam::194169602214:role/SageMakerPipelineExecutionRole"
   default_bucket: "amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9"
 
 infrastructure:
