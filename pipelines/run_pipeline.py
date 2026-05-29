@@ -2,6 +2,7 @@ import os
 import yaml
 import datetime
 import sagemaker
+import boto3  # 🎯 Added to help bind the custom session configuration
 from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
@@ -15,7 +16,21 @@ def create_and_run_pipeline():
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
         
-    session = sagemaker.Session()
+    # 🎯 FIX: Force SageMaker Session to bind directly to your explicit S3 bucket
+    boto_session = boto3.Session(region_name=config["aws"]["region"])
+    sagemaker_client = boto_session.client("sagemaker")
+    
+    custom_bucket = config["aws"].get("default_bucket")
+    
+    if custom_bucket and "YOUR_EXISTING_S3_BUCKET" not in custom_bucket:
+        session = sagemaker.Session(
+            boto_session=boto_session,
+            sagemaker_client=sagemaker_client,
+            default_bucket=custom_bucket # 🚀 Forces SDK to use this exact storage resource
+        )
+    else:
+        # Fallback to default behavior if config is left unconfigured
+        session = sagemaker.Session(boto_session=boto_session, sagemaker_client=sagemaker_client)
     
     # Resolve the security context dynamically for target execution runners
     role = config["aws"].get("sagemaker_role_arn")
@@ -37,7 +52,7 @@ def create_and_run_pipeline():
         role=role,
         instance_type=instance_type_param,
         framework_version=config["infrastructure"]["framework_version"],
-        sagemaker_session=session
+        sagemaker_session=session  # Passes the fixed session
     )
     
     training_step = TrainingStep(
@@ -70,7 +85,7 @@ def create_and_run_pipeline():
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
         steps=[training_step, register_step],
-        sagemaker_session=session
+        sagemaker_session=session  # Passes the fixed session
     )
     
     print("Uploading and synchronizing pipeline schema with AWS...")
