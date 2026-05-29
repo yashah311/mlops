@@ -2,6 +2,7 @@ aws:
   region: "ap-south-1"
   model_package_group_name: "mlops-model-group"
   pipeline_name: "MLOpsPipelineVersioned"
+  sagemaker_role_arn: "arn:aws:iam::194169602214:role/service-role/AmazonSageMakerAdminIAMExecutionRole"
 
 infrastructure:
   training_instance: "ml.m5.large"
