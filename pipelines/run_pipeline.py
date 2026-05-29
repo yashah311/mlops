@@ -18,7 +18,18 @@ def create_and_run_pipeline():
         config = yaml.safe_load(f)
         
     session = sagemaker.Session()
-    role = get_execution_role()
+    
+    # 🎯 FIX: Safely resolve the role ARN depending on environment (GitHub vs. SageMaker Studio)
+    try:
+        role = config["aws"]["sagemaker_role_arn"]
+        if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
+            raise ValueError("Config role ARN placeholder not updated.")
+        print(f"Using SageMaker Execution Role ARN from config: {role}")
+    except (KeyError, ValueError):
+        print("Config role not found or not configured. Attempting native AWS fallback...")
+        role = get_execution_role()
+        print(f"Using native workspace resolved role: {role}")
+
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
     # 🎯 PIPELINE PARAMETERIZATION: Avoids hardcoding instance variables
@@ -31,7 +42,7 @@ def create_and_run_pipeline():
     estimator = SKLearn(
         entry_point="train.py",
         source_dir=os.path.join(base_dir, "src"),
-        role=role,
+        role=role, # 👈 Uses the securely resolved role
         instance_type=instance_type_param,
         framework_version=config["infrastructure"]["framework_version"],
         sagemaker_session=session

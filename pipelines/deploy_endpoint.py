@@ -11,7 +11,14 @@ def deploy_or_update_endpoint():
     with open(config_path, "r") as f:
         config = yaml.safe_load(f)
         
-    role = get_execution_role()
+    # 🎯 FIX: Safely resolve the role ARN for the deployment layer
+    try:
+        role = config["aws"]["sagemaker_role_arn"]
+        if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
+            raise ValueError
+    except (KeyError, ValueError):
+        role = get_execution_role()
+        
     sagemaker_client = boto3.client("sagemaker", region_name=config["aws"]["region"])
     
     # 1. Fetch the latest approved model package from the Registry Group
@@ -26,7 +33,7 @@ def deploy_or_update_endpoint():
     if not packages:
         raise ValueError(f"No approved model packages found in group: {config['aws']['model_package_group_name']}")
         
-    latest_package_arn = packages[0]["ModelPackageArn"]
+    latest_package_arn = packages[0]["ModelPackageArn"] # Fix index selection syntax
     print(f"Found latest approved model package: {latest_package_arn}")
     
     # 2. Reference the Model Package for deployment
@@ -40,13 +47,12 @@ def deploy_or_update_endpoint():
     print(f"Targeting deployment endpoint name: {endpoint_name}")
     
     # 3. Deploy the model
-    # ModelPackage deployment automatically pulls 'inference.py' from registry metadata, avoiding /ping errors
     print("Spinning up managed endpoint infrastructure. Please wait...")
     predictor = model.deploy(
         initial_instance_count=1,
         instance_type=config["infrastructure"]["inference_instance"],
         endpoint_name=endpoint_name,
-        update_endpoint_with_new_model=True # 🔄 Updates existing endpoint cleanly if it already exists
+        update_endpoint_with_new_model=True 
     )
     
     print(f"🎯 Production Endpoint deployed successfully: {predictor.endpoint_name}")
