@@ -167,10 +167,16 @@ def create_and_run_pipeline():
     pipeline.upsert(role_arn=role)
     execution = pipeline.start()
     
-    print(f"🚀 Conditional Pipeline execution started! ARN: {execution.arn}")
-    print("Waiting for execution loops to complete...")
-    execution.wait()
-    print("✅ Pipeline executed successfully.")
+    # 🚀 PRODUCTION OPTIMIZATION: Fire-and-forget strategy
+    print(f"\n🚀 Conditional Pipeline execution triggered successfully!")
+    print(f"=========================================================================")
+    print(f"Execution ARN: {execution.arn}")
+    print(f"=========================================================================")
+    print("✨ Handed off to AWS SageMaker Engine.")
+    print("🎯 Track execution graph logs visually inside your AWS SageMaker Console UI.")
+    
+    # Removed execution.wait() to prevent GitHub Actions from blocking on runtime logs.
+    print("✅ CI/CD Orchestration stage completed successfully.")
 
 if __name__ == "__main__":
     create_and_run_pipeline()
