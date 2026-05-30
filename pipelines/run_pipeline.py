@@ -63,7 +63,7 @@ def create_and_run_pipeline():
         sagemaker_session=session
     )
     
-    # 🚀 THE DEFINITIVE FIX: Force env variables into the step registration arguments
+    # 🚀 THE CORRECT V2 METADATA INJECTION WAY
     register_step = ModelStep(
         name="RegisterModelStep",
         step_args=model_instance.register(
@@ -73,10 +73,10 @@ def create_and_run_pipeline():
             transform_instances=[config["infrastructure"]["inference_instance"]],
             model_package_group_name=config["aws"]["model_package_group_name"],
             approval_status="Approved",
-            # 👇 FORCES REGISTRY CONTAINER MANIFEST TO RECOGNIZE ENTRY POINT
-            env={
+            # 👇 Injects the container metadata values safely without throwing TypeErrors
+            customer_metadata_properties={
                 "SAGEMAKER_PROGRAM": "inference.py",
-                "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
+                "SAGEMAKER_SUBMIT_DIRECTORY": str(training_step.properties.ModelArtifacts.S3ModelArtifacts)
             }
         )
     )
