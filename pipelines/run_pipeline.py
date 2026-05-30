@@ -7,7 +7,9 @@ from sagemaker.sklearn.estimator import SKLearn
 from sagemaker.workflow.parameters import ParameterString
 from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
-from sagemaker.workflow.step_collections import RegisterModel
+# 🎯 KEY UPDATE: Switch to modern explicit Model and Step declarations
+from sagemaker.sklearn.model import SKLearnModel
+from sagemaker.workflow.model_step import ModelStep
 
 def create_and_run_pipeline():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -17,33 +19,20 @@ def create_and_run_pipeline():
         config = yaml.safe_load(f)
         
     target_region = config["aws"]["region"]
-    print(f"Initializing SageMaker Session explicitly targeting region: {target_region}")
+    print(f"Initializing SageMaker explicit session workspace targeting: {target_region}")
     
-    # Instantiate clients with explicit region bindings to satisfy the SDK layer
     boto_session = boto3.Session(region_name=target_region)
     sagemaker_client = boto_session.client("sagemaker", region_name=target_region)
     
     custom_bucket = config["aws"].get("default_bucket")
+    session = sagemaker.Session(
+        boto_session=boto_session,
+        sagemaker_client=sagemaker_client,
+        default_bucket=custom_bucket if custom_bucket and "YOUR_EXISTING_S3" not in custom_bucket else None
+    )
     
-    if custom_bucket and "YOUR_EXISTING_S3_BUCKET" not in custom_bucket:
-        session = sagemaker.Session(
-            boto_session=boto_session,
-            sagemaker_client=sagemaker_client,
-            default_bucket=custom_bucket
-        )
-    else:
-        session = sagemaker.Session(
-            boto_session=boto_session,
-            sagemaker_client=sagemaker_client
-        )
-    
-    # Resolve the security context dynamically for target execution runners
     role = config["aws"].get("sagemaker_role_arn")
-    if not role or "YOUR_SAGEMAKER_ROLE_NAME" in role:
-        from sagemaker import get_execution_role
-        role = get_execution_role()
-        
-    print(f"Executing workflow utilizing IAM Target Role: {role}")
+    print(f"Orchestrating workflow utilizing Execution Role: {role}")
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
     instance_type_param = ParameterString(
@@ -51,6 +40,7 @@ def create_and_run_pipeline():
         default_value=config["infrastructure"]["training_instance"]
     )
     
+    # Standard Model Training Definition Step
     estimator = SKLearn(
         entry_point="train.py",
         source_dir=os.path.join(base_dir, "src"),
@@ -65,32 +55,29 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
-    # Inside your pipelines/run_pipeline.py file:
-    register_step = RegisterModel(
-        name="RegisterModel",
-        estimator=estimator,
+    # 🚀 THE FIX: Create an explicit Model object that links code straight to the registry artifact
+    model_instance = SKLearnModel(
         model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
-        content_types=["application/json"],
-        response_types=["application/json"],
-        inference_instances=[config["infrastructure"]["inference_instance"]],
-        transform_instances=[config["infrastructure"]["inference_instance"]],
-        model_package_group_name=config["aws"]["model_package_group_name"],
-        approval_status="Approved",
-        
-        # 👇 CRITICAL FIX: Forces the container registry payload manifest to declare its handlers
-        env={
-            "SAGEMAKER_PROGRAM": "inference.py",
-            "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/model/code"
-        },
-        tags=[
-            {"Key": "project", "Value": config["metadata"]["project"]},
-            {"Key": "version", "Value": model_version},
-            {"Key": "env", "Value": config["metadata"]["env"]}
-        ]
+        role=role,
+        entry_point="inference.py",
+        source_dir=os.path.join(base_dir, "src"), # 🎯 Forces SageMaker to bundle inference.py into the package
+        framework_version=config["infrastructure"]["framework_version"],
+        sagemaker_session=session
     )
-
     
-    # Explicitly force the Pipeline definition to consume the regional session object
+    # Wrap the Model object inside a proper register pipeline workflow step
+    register_step = ModelStep(
+        name="RegisterModelStep",
+        step_args=model_instance.register(
+            content_types=["application/json"],
+            response_types=["application/json"],
+            inference_instances=[config["infrastructure"]["inference_instance"]],
+            transform_instances=[config["infrastructure"]["inference_instance"]],
+            model_package_group_name=config["aws"]["model_package_group_name"],
+            approval_status="Approved"
+        )
+    )
+    
     pipeline = Pipeline(
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
@@ -98,14 +85,14 @@ def create_and_run_pipeline():
         sagemaker_session=session  
     )
     
-    print("Uploading and synchronizing pipeline schema with AWS...")
+    print("Uploading and synchronizing updated pipeline schema with AWS...")
     pipeline.upsert(role_arn=role)
     execution = pipeline.start()
     
     print(f"🚀 Pipeline execution started! ARN: {execution.arn}")
-    print("Waiting for training and model registration to complete...")
+    print("Waiting for training and explicit model registration to complete...")
     execution.wait()
-    print("✅ Pipeline executed successfully. Model package is registered.")
+    print("✅ Pipeline executed successfully. Model package version is registered with custom inference handlers.")
 
 if __name__ == "__main__":
     create_and_run_pipeline()
