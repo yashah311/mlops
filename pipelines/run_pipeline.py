@@ -11,7 +11,7 @@ from sagemaker.sklearn.model import SKLearnModel
 from sagemaker.workflow.model_step import ModelStep
 from sagemaker.workflow.pipeline_context import PipelineSession
 
-# 🎯 NEW IMPORTS: For evaluation and conditional gates
+# For evaluation validation and conditional evaluation gates
 from sagemaker.sklearn.processing import SKLearnProcessor
 from sagemaker.workflow.steps import ProcessingStep
 from sagemaker.workflow.properties import PropertyFile
@@ -26,6 +26,8 @@ def create_and_run_pipeline():
         config = yaml.safe_load(f)
         
     target_region = config["aws"]["region"]
+    print(f"Initializing SageMaker Session explicitly targeting region: {target_region}")
+    
     boto_session = boto3.Session(region_name=target_region)
     sagemaker_client = boto_session.client("sagemaker", region_name=target_region)
     custom_bucket = config["aws"].get("default_bucket")
@@ -37,6 +39,7 @@ def create_and_run_pipeline():
     )
     
     role = config["aws"].get("sagemaker_role_arn")
+    print(f"Orchestrating workflow utilizing IAM Target Role: {role}")
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
     instance_type_param = ParameterString(
@@ -45,7 +48,7 @@ def create_and_run_pipeline():
     )
     
     # -----------------------------------------------------------------
-    # STEP 1: Model Training
+    # STEP 1: Model Training Definition
     # -----------------------------------------------------------------
     estimator = SKLearn(
         entry_point="train.py",
@@ -67,6 +70,7 @@ def create_and_run_pipeline():
     eval_processor = SKLearnProcessor(
         framework_version=config["infrastructure"]["framework_version"],
         instance_type=config["infrastructure"]["inference_instance"],
+        instance_count=1, # 🚀 THE DEFINITIVE STRUCTURAL FIX: Eliminates the null definition crash
         role=role,
         sagemaker_session=session
     )
@@ -145,7 +149,7 @@ def create_and_run_pipeline():
     condition_step = ConditionStep(
         name="CheckAccuracyGate",
         conditions=[condition_gate],
-        if_steps=[register_step],  # 🚀 Only registers if accuracy >= 80%
+        if_steps=[register_step],  # Only registers if accuracy >= 80%
         else_steps=[]              # Stops executing if condition fails
     )
     
@@ -155,7 +159,7 @@ def create_and_run_pipeline():
     pipeline = Pipeline(
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
-        steps=[training_step, evaluation_step, condition_step], # Added condition step
+        steps=[training_step, evaluation_step, condition_step],
         sagemaker_session=session
     )
     
