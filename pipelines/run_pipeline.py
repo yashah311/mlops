@@ -9,7 +9,6 @@ from sagemaker.workflow.steps import TrainingStep
 from sagemaker.workflow.pipeline import Pipeline
 from sagemaker.sklearn.model import SKLearnModel
 from sagemaker.workflow.model_step import ModelStep
-# 🎯 CRITICAL V2 IMPORT UPDATE: Import the correct PipelineSession type
 from sagemaker.workflow.pipeline_context import PipelineSession
 
 def create_and_run_pipeline():
@@ -26,7 +25,6 @@ def create_and_run_pipeline():
     sagemaker_client = boto_session.client("sagemaker", region_name=target_region)
     custom_bucket = config["aws"].get("default_bucket")
     
-    # 🚀 THE FIX: Use PipelineSession to defer internal SDK registry operations to runtime
     session = PipelineSession(
         boto_session=boto_session,
         sagemaker_client=sagemaker_client,
@@ -48,7 +46,7 @@ def create_and_run_pipeline():
         role=role,
         instance_type=instance_type_param,
         framework_version=config["infrastructure"]["framework_version"],
-        sagemaker_session=session  # Bind to the PipelineSession
+        sagemaker_session=session
     )
     
     training_step = TrainingStep(
@@ -62,9 +60,10 @@ def create_and_run_pipeline():
         entry_point="inference.py",
         source_dir=os.path.join(base_dir, "src"), 
         framework_version=config["infrastructure"]["framework_version"],
-        sagemaker_session=session  # Bind to the PipelineSession
+        sagemaker_session=session
     )
     
+    # 🚀 THE DEFINITIVE FIX: Force env variables into the step registration arguments
     register_step = ModelStep(
         name="RegisterModelStep",
         step_args=model_instance.register(
@@ -73,7 +72,12 @@ def create_and_run_pipeline():
             inference_instances=[config["infrastructure"]["inference_instance"]],
             transform_instances=[config["infrastructure"]["inference_instance"]],
             model_package_group_name=config["aws"]["model_package_group_name"],
-            approval_status="Approved"
+            approval_status="Approved",
+            # 👇 FORCES REGISTRY CONTAINER MANIFEST TO RECOGNIZE ENTRY POINT
+            env={
+                "SAGEMAKER_PROGRAM": "inference.py",
+                "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
+            }
         )
     )
     
@@ -81,7 +85,7 @@ def create_and_run_pipeline():
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
         steps=[training_step, register_step],
-        sagemaker_session=session  # Bind to the PipelineSession
+        sagemaker_session=session
     )
     
     print("Uploading and synchronizing pipeline schema with AWS...")
