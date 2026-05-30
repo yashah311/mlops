@@ -65,6 +65,7 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
+    # Inside your pipelines/run_pipeline.py file:
     register_step = RegisterModel(
         name="RegisterModel",
         estimator=estimator,
@@ -75,9 +76,11 @@ def create_and_run_pipeline():
         transform_instances=[config["infrastructure"]["inference_instance"]],
         model_package_group_name=config["aws"]["model_package_group_name"],
         approval_status="Approved",
+        
+        # 👇 CRITICAL FIX: Forces the container registry payload manifest to declare its handlers
         env={
             "SAGEMAKER_PROGRAM": "inference.py",
-            "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
+            "SAGEMAKER_SUBMIT_DIRECTORY": "/opt/ml/model/code"
         },
         tags=[
             {"Key": "project", "Value": config["metadata"]["project"]},
@@ -85,6 +88,7 @@ def create_and_run_pipeline():
             {"Key": "env", "Value": config["metadata"]["env"]}
         ]
     )
+
     
     # Explicitly force the Pipeline definition to consume the regional session object
     pipeline = Pipeline(

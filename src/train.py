@@ -7,43 +7,49 @@ from sklearn.model_selection import train_test_split
 from sklearn.ensemble import RandomForestClassifier
 
 def train():
-    print("Starting training inside SageMaker container...")
+    print("Starting training execution loop inside production workspace...")
     
-    # Load sample diagnostic dataset matching your payload shapes
+    # Load standardized feature selection matrix matching test structures
     data = load_breast_cancer()
     X_train, X_test, y_train, y_test = train_test_split(
         data.data, data.target, test_size=0.2, random_state=42
     )
     
-    # Simple model configuration
+    # Simple algorithm configuration fitting signature shapes
     model = RandomForestClassifier(n_estimators=100, random_state=42)
     model.fit(X_train, y_train)
-    print(f"Model trained successfully. Accuracy score: {model.score(X_test, y_test):.4f}")
+    print(f"Training cycle completed successfully. Evaluation score value: {model.score(X_test, y_test):.4f}")
     
-    # Core Fix: Use the canonical SageMaker output artifact path location
+    # Core Cloud Isolation Fix: Define standard structural output directory target
     model_dir = os.environ.get("SAGEMAKER_MODEL_DIR", "/opt/ml/model")
     os.makedirs(model_dir, exist_ok=True)
     
-    # Save the binary object
+    # 1. Store model weights object directly inside the base archive path
     model_path = os.path.join(model_dir, "model.joblib")
     joblib.dump(model, model_path)
-    print(f"Model artifact saved natively to: {model_path}")
+    print(f"Model weight binaries cleanly persisted natively: {model_path}")
     
-    # Enforce container bundle rule: Clone serving files into model archive root
+    # 2. Package the execution script directly into the artifact archive 🎯
     container_code_dir = os.path.join(model_dir, "code")
     os.makedirs(container_code_dir, exist_ok=True)
     
-    # Copy inference definition file from current folder into output payload directory
-    if os.path.exists("inference.py"):
-        shutil.copy("inference.py", os.path.join(container_code_dir, "inference.py"))
-        print("Embedded inference.py inside model code container path.")
-    else:
-        # Fallback if execution path differs slightly during tracking
-        src_inference = os.path.join(os.path.dirname(__file__), "inference.py")
-        if os.path.exists(src_inference):
-            shutil.copy(src_inference, os.path.join(container_code_dir, "inference.py"))
-            print("Embedded inference.py from source absolute directory.")
+    # Search for execution scripts dynamically based on local container runtime contexts
+    possible_source_paths = [
+        "inference.py",
+        os.path.join(os.getcwd(), "inference.py"),
+        os.path.join(os.path.dirname(__file__), "inference.py")
+    ]
+    
+    script_copied = False
+    for path in possible_source_paths:
+        if os.path.exists(path):
+            shutil.copy(path, os.path.join(container_code_dir, "inference.py"))
+            print(f"✅ Successfully nested code module from path target source: {path}")
+            script_copied = True
+            break
+            
+    if not script_copied:
+        print("⚠️ Warning: inference.py script was not found dynamically during the asset compilation phase.")
 
 if __name__ == "__main__":
     train()
-
