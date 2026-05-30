@@ -1,263 +1,110 @@
-# Enterprise End-to-End MLOps Pipeline on AWS SageMaker
+# Personal MLOps Project
+This repository is a personal end-to-end MLOps demo showcasing model training, containerized model serving, and Kubernetes/Helm deployment.
 
-An production-grade, asynchronous machine learning operations framework utilizing **Amazon SageMaker Pipelines** and **GitHub Actions** for secure, automated continuous integration and continuous delivery (CI/CD). 
+## Project Summary
+This project trains a breast cancer classification model, exposes it through a Flask scoring API, packages the service as a Docker image, and deploys it with Kubernetes and Helm.
 
-This architecture enforces strict isolation between machine learning logic and cloud infrastructure management configurations, applies granular, least-privilege identity access management, guarantees zero-downtime rolling deployments, and incorporates automated evaluation gates.
+## Skills Demonstrated
+- Python model training with scikit-learn
+- Flask REST API development
+- Model serialization with `joblib`
+- Docker containerization
+- Kubernetes deployment manifests
+- Helm chart authoring
+- Seldon Core component templating
 
----
+## Project Structure
 
-## 🏗️ Architectural Topology & System Flow
+- `py-flask-ml-score-api/`
+  - `api.py` - Flask API for model scoring.
+    - `/` returns a sample prediction for a hard-coded input.
+    - `/predict` accepts POST JSON payloads and returns model predictions.
+  - `model.py` - Trains an SVC classifier on the sklearn breast cancer dataset using `mean radius` and `mean concavity`.
+  - `svc_model.model` - Serialized model artifact used by the API.
+  - `Dockerfile` - Builds the Flask scoring service image and exposes port `5050`.
+  - `py_flask_ml_score.yaml` - Kubernetes manifest for deploying the service and a LoadBalancer.
 
-```text
-[GitHub Plane] ──(OIDC Token)──> [IAM Security Gateway]
-                                          │
-    ┌─────────────────────────────────────┴─────────────────────────────────────┐
-    ▼                                                                           ▼
-[pipelines/run_pipeline.py]                                        [pipelines/deploy_endpoint.py]
-    │                                                                           │
-    ▼                                                                           ▼
-[SageMaker Pipeline Session Engine]                               [Boto3 Active Deployment Layer]
-    │                                                                           │
-    ├── Step 1: Training Job (train.py)                                         ├── Parse Registry Package Metadata
-    ├── Step 2: Processing Evaluation (evaluate.py)                             ├── Generate Timestamped Configurations
-    └── Step 3: Condition Check (Accuracy >= 80%)                               ├── Evaluate Infrastructure Health Status
-               ├── Pass ──> [Register Model Package in Registry]                └── Execute Zero-Downtime Rolling Update
-               └── Fail ──> [Halt Pipeline Lifecycle]                                   │
-                                                                                        ▼
-                                                                           [tests/test_inference.py]
-                                                                           └── Smoke Test E2E Payload Validation
-```
+- `helm-ml-score-app/`
+  - `Chart.yaml` - Helm chart metadata.
+  - `values.yaml` - Default Helm configuration for app name, namespace, image, and ports.
+  - `templates/` - Namespace, deployment, and service templates.
 
-```mermaid
-graph TD
-    %% Styling and Classes
-    classDef github fill:#24292e,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef iam fill:#e05243,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef sagemaker fill:#ff9900,stroke:#fff,stroke-width:1px,color:#fff;
-    classDef storage fill:#3F8624,stroke:#fff,stroke-width:1px,color:#fff;
+- `seldon-ml-score-component/`
+  - `MLScore.py` - Seldon Core wrapper template for model serving.
+  - `Dockerfile`, `Pipfile`, `Pipfile.lock` - runtime dependencies.
 
-    %% GitHub Actions Build Plane
-    subgraph GitPlane ["GitHub Actions Build Plane (CI/CD Pipeline)"]
-        A[Git Push main]:::github --> B[Trigger Runner VM]:::github
-        B --> C[Configure AWS OIDC/Credentials]:::github
-        C --> D[Execute pipelines/run_pipeline.py]:::github
-        C --> E[Execute pipelines/deploy_endpoint.py]:::github
-        C --> F[Execute tests/test_inference.py]:::github
-    end
+## What this project does
 
-    %% Identity & Access Boundary
-    subgraph IAMBoundary ["AWS IAM Security Layer (Least Privilege)"]
-        G[User: github-actions-transformer]:::iam
-        H[Inline: GitHub-PassRole-Override]:::iam
-        I[Role: SageMakerPipelineExecutionRole]:::iam
-        
-        G -. PassRole .-> I
-    end
+1. Trains a breast cancer classification model with scikit-learn.
+2. Serializes the model to disk with `joblib`.
+3. Builds a Flask API to serve predictions from the trained model.
+4. Containers the service with Docker and exposes port `5050`.
+5. Provides Kubernetes manifests and a Helm chart for deployment.
+6. Includes a Seldon Core wrapper template for future production-grade serving.
 
-    %% Core Managed Compute Engine
-    subgraph SMCompute ["Amazon SageMaker Orchestration Engine (DAG Workflow)"]
-        D --> J[Upsert & Trigger Pipeline]:::sagemaker
-        
-        subgraph PipelineDAG ["Compiled DAG Architecture"]
-            J --> K[Step 1: TrainModel <br> SKLearn Estimator]:::sagemaker
-            K --> L[Step 2: EvaluateModel <br> SKLearn Processor]:::sagemaker
-            L --> M{Step 3: CheckAccuracyGate <br> ConditionStep >= 80%}:::sagemaker
-            M -- True --> N[Step 4: RegisterModelStep <br> ModelStep]:::sagemaker
-            M -- False --> O[Terminate Pipeline Execution]:::sagemaker
-        end
-    end
+## MLOps Lifecycle Mapping
 
-    %% Data Plane & Artifact Tracking
-    subgraph DataPlane ["Storage & Asset Management Layer"]
-        P[(S3 Bucket <br> sagemaker-ap-south-1-194169602214)]:::storage
-        Q[(S3 Bucket <br> amazon-sagemaker-...-4z6615tqnogku9)]:::storage
-        R[SageMaker Model Registry <br> group: mlops-model-group]:::sagemaker
+| Lifecycle stage | Project component | Files / artifacts |
+| --- | --- | --- |
+| Data and experimentation | Dataset selection and feature engineering | `py-flask-ml-score-api/model.py` |
+| Model training | Train and evaluate an SVC classifier | `py-flask-ml-score-api/model.py` |
+| Model serialization | Save trained model for serving | `py-flask-ml-score-api/svc_model.model` |
+| Model serving | REST API for prediction requests | `py-flask-ml-score-api/api.py` |
+| Containerization | Package service as Docker image | `py-flask-ml-score-api/Dockerfile` |
+| Deployment | Kubernetes manifest deployment | `py-flask-ml-score-api/py_flask_ml_score.yaml` |
+| Deployment automation | Helm chart for repeatable deployment | `helm-ml-score-app/` |
+| Model serving template | Seldon Core wrapper for future production | `seldon-ml-score-component/MLScore.py` |
 
-        K <--> |Read Input / Write Model| P
-        L <--> |Read Model / Write metrics.json| P
-        J <--> |DAG Blueprint Schema| Q
-        N --> |Approved Version Manifest <br> with Customer Metadata| R
-    end
+## How to Use
 
-    %% Continuous Delivery Pipeline
-    subgraph LiveServing ["Live Serving Plane (Real-Time Endpoint)"]
-        E --> S[Query Latest Approved Model Package]:::sagemaker
-        R -. Read Metadata .-> S
-        S --> T[Boto3 Client Wrapper Engine]:::sagemaker
-        T --> |Dynamic Timestamp Config| U[Create EndpointConfig]:::sagemaker
-        U --> V{DescribeEndpoint Status}:::sagemaker
-        
-        V -- Failed --> W[Delete Broken Endpoint]:::sagemaker
-        W --> X[Create New Endpoint]:::sagemaker
-        
-        V -- InService / Updating --> Y[Polled Wait Loop]:::sagemaker
-        Y --> Z[Update Endpoint <br> Zero-Downtime Rolling Update]:::sagemaker
-    end
-
-    %% Verification Gate
-    subgraph QualityVerification ["Production Integration Testing Gate"]
-        F --> AA[Invoke Endpoint Client Request]:::github
-        AA --> |Secure Matrix Transmission| X
-        AA --> |Secure Matrix Transmission| Z
-        X --> |JSON Inference Vector Response| AB[Assert Array Validation Code: 0]:::github
-        Z --> |JSON Inference Vector Response| AB
-    end
-```
-
-
----
-
-## ⚡ Key Architectural Features & Design Choices
-
-### 1. Decoupled Code & Infrastructure Configuration
-ML application logic resides strictly inside the `src/` directory, while deployment configurations are parameterised using a centralized configuration model (`config/pipeline_config.yaml`). This pattern ensures clean environments, mitigates dependency drift, and allows for seamless changes to infrastructure types without touching execution code.
-
-### 2. Resolution of the SageMaker `/ping` Root Defect
-Standard SageMaker pipeline registrations (`RegisterModel`) pull raw output files directly from the execution file layers, stripping away deployment handler dependencies. 
-
-This pipeline design re-architects this layout to implement the `sagemaker.workflow.model_step.ModelStep` combined with the `PipelineSession` framework. By injecting serving variables (`SAGEMAKER_PROGRAM`) natively inside the `SKLearnModel` definition, configuration data maps correctly inside the registry metadata. This ensures that the Gunicorn processes locate the custom execution modules instantly and clears the `/ping` container health check error.
-
-### 3. Native Processing & Condition Evaluation Gates
-A dedicated `ProcessingStep` extracts performance metrics into a standardized JSON report on S3. A subsequent `ConditionStep` handles routing logic: model metadata packages are only approved and moved to the registry if performance meets or exceeds the required threshold (e.g., 80% accuracy).
-
-### 4. Dynamic Rolling Deployments with Boto3 Orchestration
-Rather than using high-level SDK abstractions that obscure infrastructure dependencies, `pipelines/deploy_endpoint.py` uses raw `boto3` parameters. This configuration implements an enterprise-ready continuous delivery flow:
-* **Config Immutability Handling:** Every deployment run generates an immutable, timestamped endpoint configuration to prevent naming collisions.
-* **Resilient State Management:** The deployment layer checks the active health status of existing infrastructure before running changes. It automatically deletes failed resources to clear the workspace and polls busy updates smoothly.
-* **Zero-Downtime Blue/Green Updates:** Updates are sent to the production endpoints as managed rolling updates, shifting incoming requests cleanly across active hosts without down-time.
-
----
-
-## 🔒 Security Hardening & IAM Governance
-
-This infrastructure enforces a zero-trust model. The automated GitHub Actions runner authenticates using scoped programmatic access configurations, blocking access to unrelated account components.
-
-### 1. Minimal-Access Programmatic User Policy
-Attach this policy directly to your automation user (`github-actions-transformer`) to grant the specific pipeline management capabilities required for compilation and orchestration tasks:
-
-```json
-{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "SageMakerPipelineAndEndpointManagement",
-			"Effect": "Allow",
-			"Action": [
-				"sagemaker:CreateTrainingJob",
-				"sagemaker:DescribeTrainingJob",
-				"sagemaker:CreateProcessingJob",
-				"sagemaker:DescribeProcessingJob",
-				"sagemaker:CreateModel",
-				"sagemaker:DescribeModel",
-				"sagemaker:DeleteModel",
-				"sagemaker:CreateModelPackage",
-				"sagemaker:DescribeModelPackage",
-				"sagemaker:ListModelPackages",
-				"sagemaker:CreateModelPackageGroup",
-				"sagemaker:DescribeModelPackageGroup",
-				"sagemaker:ListModelPackageGroups",
-				"sagemaker:CreateEndpointConfig",
-				"sagemaker:DescribeEndpointConfig",
-				"sagemaker:DeleteEndpointConfig",
-				"sagemaker:CreateEndpoint",
-				"sagemaker:DescribeEndpoint",
-				"sagemaker:UpdateEndpoint",
-				"sagemaker:DeleteEndpoint",
-				"sagemaker:ListEndpoints",
-				"sagemaker:CreatePipeline",
-				"sagemaker:UpdatePipeline",
-				"sagemaker:StartPipelineExecution",
-				"sagemaker:DescribePipeline",
-				"sagemaker:DescribePipelineExecution",
-				"sagemaker:ListPipelineExecutions",
-				"sagemaker:AddTags",
-				"sagemaker:InvokeEndpoint"
-			],
-			"Resource": [
-				"arn:aws:sagemaker:ap-south-1:194169602214:training-job/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:processing-job/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:model/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:model-package-group/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:model-package/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:endpoint-config/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:endpoint/*",
-				"arn:aws:sagemaker:ap-south-1:194169602214:pipeline*"
-			]
-		},
-		{
-			"Sid": "S3BucketAndArtifactAccess",
-			"Effect": "Allow",
-			"Action": [
-				"s3:GetObject",
-				"s3:PutObject",
-				"s3:ListBucket",
-				"s3:DeleteObject",
-				"s3:GetBucketLocation"
-			],
-			"Resource": [
-				"arn:aws:s3:::sagemaker-ap-south-1-194169602214",
-				"arn:aws:s3:::sagemaker-ap-south-1-194169602214/*",
-				"arn:aws:s3:::amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9",
-				"arn:aws:s3:::amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9/*"
-			]
-		}
-	]
-}
-```
-
-### 2. User Inline Policy: Secure Role Delegation Cross-Boundary
-To protect against privilege escalation attacks, AWS explicitly prevents standard IAM users from configuring or assigning execution capabilities that exceed their own security boundaries. 
-
-This project solves this by attaching a granular `iam:PassRole` inline block to the programmatic user account. This explicitly allows it to pass only the specific, scoped service role (`SageMakerPipelineExecutionRole`) containing `AmazonSageMakerFullAccess` to the underlying compute instances, while explicitly restricting it from passing broader administrative credentials:
-
-```json
-{
-	"Version": "2012-10-17",
-	"Statement": [
-		{
-			"Sid": "DirectGitHubPassRoleOverride",
-			"Effect": "Allow",
-			"Action": "iam:PassRole",
-			"Resource": [
-				"arn:aws:iam::194169602214:role/service-role/SageMakerPipelineExecutionRole"
-			],
-			"Condition": {
-				"StringEquals": {
-					"iam:PassedToService": "://amazonaws.com"
-				}
-			}
-		}
-	]
-}
-```
-
----
-
-## 🛠️ Operational Deployment & Execution Guide
-
-### Local Evaluation & Interactive Testing
-To run workflow steps manually or inspect performance characteristics inside an integrated development workspace (such as SageMaker Studio Notebook cells):
+### Run locally with Flask
 
 ```bash
-# Initialize project requirements
+cd py-flask-ml-score-api
 pip install -r requirements.txt
-
-# Compile, upsert, and run the pipeline configuration asynchronously
-python pipelines/run_pipeline.py
-
-# Poll registry changes and trigger a rolling update deployment
-python pipelines/deploy_endpoint.py
-
-# Execute smoke validation scripts against active endpoints
-python tests/test_inference.py
+python api.py
 ```
 
-### Git Automation Flow
-The active configuration uses a hands-free integration path triggered on code changes to the primary repository branch. To release changes:
+Send a request:
 
 ```bash
-git add .
-git commit -m "feat: incorporate end-to-end operational code refactoring fixes"
-git push origin main
+curl -X POST http://localhost:5050/predict -H 'Content-Type: application/json' -d '{"data": [13.77, 0.2344]}'
 ```
-Track live build container tracking metrics and workflow progress directly under your repository's **GitHub Actions Console Dashboard**.
+
+### Build Docker image
+
+```bash
+cd py-flask-ml-score-api
+docker build -t mlops-score-api:latest .
+```
+
+### Deploy with Kubernetes manifest
+
+```bash
+kubectl apply -f py-flask-ml-score-api/py_flask_ml_score.yaml
+```
+
+### Deploy with Helm
+
+```bash
+cd helm-ml-score-app
+helm install test-ml-score .
+```
+
+## Interview-Ready Highlights
+- Built a complete MLOps workflow from model training to deployment.
+- Demonstrated containerization and orchestration skills.
+- Used a real dataset and a reproducible API serving pattern.
+- Included a Helm chart and Kubernetes manifest for deployment automation.
+
+## Future Improvements
+- Add model evaluation metrics and validation.
+- Extend `seldon-ml-score-component` to load the trained model.
+- Add CI/CD automation for Docker image build and Kubernetes deployment.
+- Add automated tests for the API and deployment manifests.
+
+## Quick Links
+* Jupyter notebook: https://colab.research.google.com/drive/1ydnBvjVr7oVX9y05JATdCmQJv1SWvLsB#scrollTo=GUmOP17g_0NR
+* Install minikube: https://minikube.sigs.k8s.io/docs/start/
+* Install helm: https://www.cyberithub.com/steps-to-install-helm-kubernetes-package-manager-on-linux/
+
