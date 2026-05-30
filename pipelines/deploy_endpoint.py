@@ -30,7 +30,8 @@ def deploy_or_update_endpoint():
     print(f"Found latest approved model package: {latest_package_arn}")
     
     # 2. Naming Layout Definitions
-    endpoint_name = f"{config['aws']['model_package_group_name']}-dev-endpoint"
+    endpoint_name = config["aws"]["endpoint_name"]
+    print(f"Targeting parameterized deployment endpoint name: {endpoint_name}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     endpoint_config_name = f"{endpoint_name}-config-{timestamp}"
     model_name = f"{config['aws']['model_package_group_name']}-model-{timestamp}"

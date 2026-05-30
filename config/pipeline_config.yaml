@@ -4,6 +4,7 @@ aws:
   pipeline_name: "MLOpsPipelineVersioned"
   sagemaker_role_arn: "arn:aws:iam::194169602214:role/SageMakerPipelineExecutionRole"
   default_bucket: "amazon-sagemaker-194169602214-ap-south-1-4z6615tqnogku9"
+  endpoint_name: "mlops-model-group-dev-endpoint"
 
 infrastructure:
   training_instance: "ml.m5.large"
