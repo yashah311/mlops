@@ -54,16 +54,22 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
+    # 🚀 THE CRITICAL FIX: Pass serving metadata safely inside the Model container variables.
+    # The PipelineSession serialises these dynamic runtime properties safely into the DAG schema.
     model_instance = SKLearnModel(
         model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
         role=role,
         entry_point="inference.py",
         source_dir=os.path.join(base_dir, "src"), 
         framework_version=config["infrastructure"]["framework_version"],
-        sagemaker_session=session
+        sagemaker_session=session,
+        # 👇 INJECTED DIRECTLY HERE - Clears compile blocks and maps handlers to the container registry
+        env={
+            "SAGEMAKER_PROGRAM": "inference.py",
+            "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
+        }
     )
     
-    # 🚀 THE CORRECT V2 METADATA INJECTION WAY
     register_step = ModelStep(
         name="RegisterModelStep",
         step_args=model_instance.register(
@@ -72,12 +78,7 @@ def create_and_run_pipeline():
             inference_instances=[config["infrastructure"]["inference_instance"]],
             transform_instances=[config["infrastructure"]["inference_instance"]],
             model_package_group_name=config["aws"]["model_package_group_name"],
-            approval_status="Approved",
-            # 👇 Injects the container metadata values safely without throwing TypeErrors
-            customer_metadata_properties={
-                "SAGEMAKER_PROGRAM": "inference.py",
-                "SAGEMAKER_SUBMIT_DIRECTORY": str(training_step.properties.ModelArtifacts.S3ModelArtifacts)
-            }
+            approval_status="Approved"
         )
     )
     
