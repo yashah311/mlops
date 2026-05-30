@@ -14,7 +14,7 @@ def deploy_or_update_endpoint():
     role = config["aws"].get("sagemaker_role_arn")
     sagemaker_client = boto3.client("sagemaker", region_name=config["aws"]["region"])
     
-    # 1. Fetch the latest approved model package from the Registry Group
+    # 1. Fetch latest approved model package
     response = sagemaker_client.list_model_packages(
         ModelPackageGroupName=config["aws"]["model_package_group_name"],
         ModelApprovalStatus="Approved",
@@ -24,29 +24,22 @@ def deploy_or_update_endpoint():
     
     packages = response.get("ModelPackageSummaryList", [])
     if not packages:
-        raise ValueError(f"No approved model packages found in group: {config['aws']['model_package_group_name']}")
+        raise ValueError(f"No approved packages found.")
         
     latest_package_arn = packages[0]["ModelPackageArn"]
     print(f"Found latest approved model package: {latest_package_arn}")
     
-    # 2. Naming Layout Definitions
+    # 2. Dynamic Naming Definitions
     endpoint_name = config["aws"]["endpoint_name"]
-    print(f"Targeting parameterized deployment endpoint name: {endpoint_name}")
     timestamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     endpoint_config_name = f"{endpoint_name}-config-{timestamp}"
     model_name = f"{config['aws']['model_package_group_name']}-model-{timestamp}"
-    
-    print(f"Creating Model Resource: {model_name}")
-    print(f"Creating Unique Config: {endpoint_config_name}")
-    print(f"Targeting Endpoint: {endpoint_name}")
     
     # 3. Create SageMaker Model Entity
     sagemaker_client.create_model(
         ModelName=model_name,
         ExecutionRoleArn=role,
-        PrimaryContainer={
-            "ModelPackageName": latest_package_arn
-        }
+        PrimaryContainer={"ModelPackageName": latest_package_arn}
     )
     
     # 4. Create Endpoint Configuration
@@ -60,60 +53,60 @@ def deploy_or_update_endpoint():
                 "InstanceType": config["infrastructure"]["inference_instance"],
                 "InitialVariantWeight": 1.0
             }
-        ],
-        Tags=[
-            {"Key": "project", "Value": config["metadata"]["project"]},
-            {"Key": "env", "Value": config["metadata"]["env"]}
         ]
     )
     
-    # 5. Smart Health Check Logic 🎯
+    # 5. Handle In-Progress Updates Natively 🎯
     endpoint_exists = False
     should_delete_failed = False
     
     try:
-        desc_response = sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
-        endpoint_exists = True
-        status = desc_response["EndpointStatus"]
-        print(f"Current Endpoint Status located: {status}")
-        
-        if status == "Failed":
-            print("⚠️ Endpoint is in a failed state. Flagging for removal...")
-            should_delete_failed = True
+        while True:
+            desc_response = sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
+            endpoint_exists = True
+            status = desc_response["EndpointStatus"]
+            print(f"Current Endpoint Status: {status}")
             
+            if status == "Updating":
+                print("⏳ Endpoint is busy updating. Waiting 30 seconds for lock to clear...")
+                time.sleep(30)
+                continue
+            elif status == "Failed":
+                print("⚠️ Endpoint failed. Marking for removal...")
+                should_delete_failed = True
+                break
+            else:
+                break # Status is InService and clear to update
+                
     except sagemaker_client.exceptions.ClientError:
-        print("Endpoint does not exist yet. Preparing first-time build sequence...")
+        print("Endpoint does not exist yet. Proceeding with fresh deployment.")
         
-    # 6. Execution Branching Handling
+    # 6. Execution Paths
     if should_delete_failed:
-        print(f"Deleting failed endpoint '{endpoint_name}' to clear workspace...")
+        print(f"Purging failed endpoint...")
         sagemaker_client.delete_endpoint(EndpointName=endpoint_name)
-        
-        # Wait until the deletion is fully completed on AWS
-        print("Waiting for deletion confirmation status...")
         while True:
             try:
                 sagemaker_client.describe_endpoint(EndpointName=endpoint_name)
                 time.sleep(10)
             except sagemaker_client.exceptions.ClientError:
-                print("✅ Failed endpoint completely purged.")
                 break
-        endpoint_exists = False # Reset flag to force a fresh creation run
+        endpoint_exists = False
         
     if endpoint_exists:
-        print("Performing seamless rolling update on active endpoint tracking layer...")
+        print(f"🚀 Performing rolling update to config: {endpoint_config_name}")
         sagemaker_client.update_endpoint(
             EndpointName=endpoint_name,
             EndpointConfigName=endpoint_config_name
         )
     else:
-        print("Initializing clean first-time endpoint generation run...")
+        print(f"🚀 Creating fresh endpoint: {endpoint_name}")
         sagemaker_client.create_endpoint(
             EndpointName=endpoint_name,
             EndpointConfigName=endpoint_config_name
         )
         
-    print(f"🚀 MLOps Endpoint orchestrator finished monitoring initialization for: {endpoint_name}")
+    print(f"✅ MLOps Deployment routine completed for: {endpoint_name}")
 
 if __name__ == "__main__":
     deploy_or_update_endpoint()
