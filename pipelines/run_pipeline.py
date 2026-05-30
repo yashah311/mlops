@@ -11,6 +11,13 @@ from sagemaker.sklearn.model import SKLearnModel
 from sagemaker.workflow.model_step import ModelStep
 from sagemaker.workflow.pipeline_context import PipelineSession
 
+# 🎯 NEW IMPORTS: For evaluation and conditional gates
+from sagemaker.sklearn.processing import SKLearnProcessor
+from sagemaker.workflow.steps import ProcessingStep
+from sagemaker.workflow.properties import PropertyFile
+from sagemaker.workflow.conditions import ConditionGreaterThanOrEqualTo
+from sagemaker.workflow.condition_step import ConditionStep
+
 def create_and_run_pipeline():
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     config_path = os.path.join(base_dir, "config", "pipeline_config.yaml")
@@ -19,8 +26,6 @@ def create_and_run_pipeline():
         config = yaml.safe_load(f)
         
     target_region = config["aws"]["region"]
-    print(f"Initializing SageMaker Session explicitly targeting region: {target_region}")
-    
     boto_session = boto3.Session(region_name=target_region)
     sagemaker_client = boto_session.client("sagemaker", region_name=target_region)
     custom_bucket = config["aws"].get("default_bucket")
@@ -32,7 +37,6 @@ def create_and_run_pipeline():
     )
     
     role = config["aws"].get("sagemaker_role_arn")
-    print(f"Orchestrating workflow utilizing IAM Target Role: {role}")
     model_version = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
     
     instance_type_param = ParameterString(
@@ -40,6 +44,9 @@ def create_and_run_pipeline():
         default_value=config["infrastructure"]["training_instance"]
     )
     
+    # -----------------------------------------------------------------
+    # STEP 1: Model Training
+    # -----------------------------------------------------------------
     estimator = SKLearn(
         entry_point="train.py",
         source_dir=os.path.join(base_dir, "src"),
@@ -54,8 +61,46 @@ def create_and_run_pipeline():
         estimator=estimator
     )
     
-    # 🚀 THE CRITICAL FIX: Pass serving metadata safely inside the Model container variables.
-    # The PipelineSession serialises these dynamic runtime properties safely into the DAG schema.
+    # -----------------------------------------------------------------
+    # STEP 2: Model Evaluation (The Quality Gate 🧪)
+    # -----------------------------------------------------------------
+    eval_processor = SKLearnProcessor(
+        framework_version=config["infrastructure"]["framework_version"],
+        instance_type=config["infrastructure"]["inference_instance"],
+        role=role,
+        sagemaker_session=session
+    )
+    
+    # Map the output JSON report so the pipeline engine can parse it natively
+    evaluation_report = PropertyFile(
+        name="EvaluationReport",
+        output_name="evaluation",
+        path="evaluation.json"
+    )
+    
+    evaluation_step = ProcessingStep(
+        name="EvaluateModel",
+        processor=eval_processor,
+        code=os.path.join(base_dir, "src", "evaluate.py"),
+        inputs=[
+            sagemaker.processing.ProcessingInput(
+                source=training_step.properties.ModelArtifacts.S3ModelArtifacts,
+                destination="/opt/ml/processing/model"
+            )
+        ],
+        outputs=[
+            sagemaker.processing.ProcessingOutput(
+                output_name="evaluation",
+                destination=f"s3://{session.default_bucket()}/{config['aws']['pipeline_name']}/evaluation",
+                source="/opt/ml/processing/evaluation"
+            )
+        ],
+        property_files=[evaluation_report]
+    )
+    
+    # -----------------------------------------------------------------
+    # STEP 3: Model Package Definition Setup
+    # -----------------------------------------------------------------
     model_instance = SKLearnModel(
         model_data=training_step.properties.ModelArtifacts.S3ModelArtifacts,
         role=role,
@@ -63,7 +108,6 @@ def create_and_run_pipeline():
         source_dir=os.path.join(base_dir, "src"), 
         framework_version=config["infrastructure"]["framework_version"],
         sagemaker_session=session,
-        # 👇 INJECTED DIRECTLY HERE - Clears compile blocks and maps handlers to the container registry
         env={
             "SAGEMAKER_PROGRAM": "inference.py",
             "SAGEMAKER_SUBMIT_DIRECTORY": training_step.properties.ModelArtifacts.S3ModelArtifacts
@@ -82,21 +126,47 @@ def create_and_run_pipeline():
         )
     )
     
+    # -----------------------------------------------------------------
+    # STEP 4: Conditional Routing Evaluation Gate 🧭
+    # -----------------------------------------------------------------
+    # Extract the numerical value out of the structured JSON layout property file
+    accuracy_expression = sagemaker.workflow.functions.JsonGet(
+        step_name=evaluation_step.name,
+        property_file=evaluation_report,
+        json_path="classification_metrics.accuracy.value"
+    )
+    
+    # Enforce an absolute rule: Model must hit at least 80% accuracy to proceed
+    condition_gate = ConditionGreaterThanOrEqualTo(
+        left=accuracy_expression,
+        right=0.80
+    )
+    
+    condition_step = ConditionStep(
+        name="CheckAccuracyGate",
+        conditions=[condition_gate],
+        if_steps=[register_step],  # 🚀 Only registers if accuracy >= 80%
+        else_steps=[]              # Stops executing if condition fails
+    )
+    
+    # -----------------------------------------------------------------
+    # Pipeline Assembly
+    # -----------------------------------------------------------------
     pipeline = Pipeline(
         name=config["aws"]["pipeline_name"],
         parameters=[instance_type_param],
-        steps=[training_step, register_step],
+        steps=[training_step, evaluation_step, condition_step], # Added condition step
         sagemaker_session=session
     )
     
-    print("Uploading and synchronizing pipeline schema with AWS...")
+    print("Uploading and synchronizing conditional pipeline schema with AWS...")
     pipeline.upsert(role_arn=role)
     execution = pipeline.start()
     
-    print(f"🚀 Pipeline execution started! ARN: {execution.arn}")
-    print("Waiting for training and model registration to complete...")
+    print(f"🚀 Conditional Pipeline execution started! ARN: {execution.arn}")
+    print("Waiting for execution loops to complete...")
     execution.wait()
-    print("✅ Pipeline executed successfully. Model package is registered.")
+    print("✅ Pipeline executed successfully.")
 
 if __name__ == "__main__":
     create_and_run_pipeline()
